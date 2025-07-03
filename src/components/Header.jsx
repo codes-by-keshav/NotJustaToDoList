@@ -1,9 +1,9 @@
 import React from 'react'
 import { motion } from 'framer-motion'
-import { FaClock, FaCalendarAlt, FaBell, FaStar, FaPlus } from 'react-icons/fa'
+import { FaClock, FaCalendarAlt, FaBell, FaStar, FaPlus, FaChartBar } from 'react-icons/fa'
 import { MdDashboard } from 'react-icons/md'
 
-const Header = ({ currentTime, onAddTask, hasNotificationPermission }) => {
+const Header = ({ currentTime, onAddTask, onShowAnalytics, hasNotificationPermission }) => {
   const formatDate = (date) => {
     return date.toLocaleDateString('en-US', {
       weekday: 'long',
@@ -150,6 +150,23 @@ const Header = ({ currentTime, onAddTask, hasNotificationPermission }) => {
 
             {/* Action Buttons */}
             <div className="flex items-center gap-2">
+              {/* Analytics Button */}
+              <motion.button
+                onClick={onShowAnalytics}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all duration-300 text-white font-exo"
+                style={{
+                  background: 'linear-gradient(135deg, #8b5cf6, #a855f7)'
+                }}
+                whileHover={{ 
+                  scale: 1.05,
+                  boxShadow: "0 0 20px rgba(139, 92, 246, 0.4)"
+                }}
+                whileTap={{ scale: 0.95 }}
+              >
+                <FaChartBar className="text-sm" />
+                <span className="hidden sm:inline">Analytics</span>
+              </motion.button>
+
               {/* Add Task Button */}
               <motion.button
                 onClick={onAddTask}

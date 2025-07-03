@@ -22,6 +22,12 @@ export const useFirestore = () => {
     localStorage.setItem('timetable-todos', JSON.stringify(todos))
   }
 
+  // Get today's date string
+  const getTodayDateString = () => {
+    const today = new Date()
+    return today.toISOString().split('T')[0] // YYYY-MM-DD format
+  }
+
   // Get all todos
   const getTodos = useCallback(async () => {
     setLoading(true)
@@ -64,7 +70,7 @@ export const useFirestore = () => {
     }
   }, [useFirebase])
 
-  // Add new todo
+  // Add new todo with date fields
   const addTodo = useCallback(async (todoData) => {
     setLoading(true)
     setError(null)
@@ -72,20 +78,27 @@ export const useFirestore = () => {
     try {
       let newTodo
       
+      const todoWithDates = {
+        ...todoData,
+        scheduledDate: todoData.scheduledDate || getTodayDateString(),
+        createdAt: todoData.createdAt || new Date().toISOString(),
+        started: false,
+        completed: false,
+        failed: false,
+        notifiedStart: false,
+        notifiedEnd: false
+      }
+      
       if (useFirebase) {
         console.log('Adding todo to Firebase...')
-        newTodo = await firestoreService.addTodo(todoData)
+        newTodo = await firestoreService.addTodo(todoWithDates)
       } else {
         console.log('Adding todo to localStorage...')
         await simulateDelay()
         
         newTodo = {
           id: Date.now().toString(),
-          ...todoData,
-          started: false,
-          completed: false,
-          failed: false,
-          createdAt: new Date().toISOString(),
+          ...todoWithDates,
           updatedAt: new Date().toISOString()
         }
         
@@ -107,11 +120,7 @@ export const useFirestore = () => {
           
           const newTodo = {
             id: Date.now().toString(),
-            ...todoData,
-            started: false,
-            completed: false,
-            failed: false,
-            createdAt: new Date().toISOString(),
+            ...todoWithDates,
             updatedAt: new Date().toISOString()
           }
           
@@ -135,7 +144,7 @@ export const useFirestore = () => {
     }
   }, [useFirebase])
 
-  // Update todo
+  // Update todo - Return complete updated todo
   const updateTodo = useCallback(async (todoId, updates) => {
     setLoading(true)
     setError(null)
@@ -145,7 +154,11 @@ export const useFirestore = () => {
       
       if (useFirebase) {
         console.log('Updating todo in Firebase...')
-        updatedTodo = await firestoreService.updateTodo(todoId, updates)
+        await firestoreService.updateTodo(todoId, updates)
+        
+        // Get the complete updated todo
+        const todos = await firestoreService.getTodos()
+        updatedTodo = todos.find(todo => todo.id === todoId)
       } else {
         console.log('Updating todo in localStorage...')
         await simulateDelay(200)
@@ -250,8 +263,18 @@ export const useFirestore = () => {
   // Get todos by date
   const getTodosByDate = useCallback(async (date) => {
     const todos = await getTodos()
-    // For now, return all todos (extend this for date filtering)
-    return todos
+    const targetDate = new Date(date).toISOString().split('T')[0]
+    
+    return todos.filter(todo => {
+      if (todo.scheduledDate) {
+        return todo.scheduledDate === targetDate
+      }
+      if (todo.createdAt) {
+        const todoDate = new Date(todo.createdAt).toISOString().split('T')[0]
+        return todoDate === targetDate
+      }
+      return false
+    })
   }, [getTodos])
 
   // Get statistics
@@ -282,7 +305,6 @@ export const useFirestore = () => {
     
     try {
       if (useFirebase) {
-        // Note: You might want to implement a batch delete in Firebase service
         console.log('Clearing all todos from Firebase...')
         const todos = await getTodos()
         await Promise.all(todos.map(todo => firestoreService.deleteTodo(todo.id)))
@@ -305,7 +327,7 @@ export const useFirestore = () => {
     // State
     loading,
     error,
-    useFirebase, // Expose this so components can know which mode they're in
+    useFirebase,
     
     // Actions
     getTodos,

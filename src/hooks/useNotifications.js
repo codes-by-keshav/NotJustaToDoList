@@ -8,7 +8,6 @@ export const useNotifications = () => {
   const intervalRef = useRef(null)
   const notificationSoundRef = useRef(null)
   const lastNotificationRef = useRef({}) // Track last notification times
-  const quoteCacheRef = useRef(new Map()) // Cache quotes locally
 
   // Check initial permission status
   useEffect(() => {
@@ -77,7 +76,7 @@ export const useNotifications = () => {
     const now = Date.now()
     const key = taskId ? `${type}_${taskId}` : type
     const lastTime = lastNotificationRef.current[key] || 0
-    const cooldown = 2 * 60 * 1000 // 2 minutes minimum between same type notifications
+    const cooldown = 3 * 60 * 1000 // 3 minutes minimum between same type notifications
     
     return now - lastTime >= cooldown
   }, [])
@@ -86,32 +85,6 @@ export const useNotifications = () => {
   const updateLastNotificationTime = useCallback((type, taskId = null) => {
     const key = taskId ? `${type}_${taskId}` : type
     lastNotificationRef.current[key] = Date.now()
-  }, [])
-
-  // Get cached quote or fallback
-  const getCachedQuote = useCallback((type) => {
-    const cached = quoteCacheRef.current.get(type)
-    if (cached && Date.now() - cached.timestamp < 10 * 60 * 1000) { // 10 min cache
-      return cached.quote
-    }
-
-    // Fallback quotes
-    const fallbacks = {
-      motivational: ["Stay focused! 🎯", "Keep going! 💪", "You've got this! ✨"],
-      start: ["Time to begin! 🚀", "Let's do this! 💪", "Focus time! 🎯"],
-      end: ["Great work! ✅", "Time to wrap up! 🏁", "Almost there! 💪"]
-    }
-
-    const quotes = fallbacks[type] || fallbacks.motivational
-    return quotes[Math.floor(Math.random() * quotes.length)]
-  }, [])
-
-  // Cache quote
-  const cacheQuote = useCallback((type, quote) => {
-    quoteCacheRef.current.set(type, {
-      quote,
-      timestamp: Date.now()
-    })
   }, [])
 
   // Show notification with rate limiting
@@ -131,7 +104,7 @@ export const useNotifications = () => {
         icon: '/favicon.ico',
         badge: '/favicon.ico',
         tag: options.tag || 'timetable-reminder',
-        renotify: false, // Don't spam
+        renotify: false,
         requireInteraction: false,
         silent: false,
         ...options
@@ -187,21 +160,8 @@ export const useNotifications = () => {
         updateLastNotificationTime('periodic')
         
         try {
-          let quote = getCachedQuote('motivational')
-          
-          // Try to get fresh quote (but don't wait long)
-          try {
-            const freshQuote = await Promise.race([
-              getNotificationQuote(),
-              new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 1000))
-            ])
-            if (freshQuote) {
-              quote = freshQuote
-              cacheQuote('motivational', quote)
-            }
-          } catch (error) {
-            // Use cached/fallback quote
-          }
+          // Fresh API call every time - NO CACHING
+          const quote = await getNotificationQuote()
           
           await showNotification(`⏰ Working on: ${activeTask.title}`, {
             body: quote,
@@ -211,6 +171,13 @@ export const useNotifications = () => {
           })
         } catch (error) {
           console.error('Error sending periodic notification:', error)
+          // If API fails, send notification without quote
+          await showNotification(`⏰ Working on: ${activeTask.title}`, {
+            body: 'Focus time! 🎯',
+            icon: '/favicon.ico',
+            tag: `task-${activeTask.id}`,
+            data: { taskId: activeTask.id, taskTitle: activeTask.title }
+          })
         }
       } else if (!activeTask && currentTask) {
         setCurrentTask(null)
@@ -222,12 +189,12 @@ export const useNotifications = () => {
       sendTaskReminder()
     }
 
-    // Set up periodic reminders (every 5 minutes instead of 15)
-    const interval = 5 * 60 * 1000 // 5 minutes
+    // Set up periodic reminders (every 10 minutes)
+    const interval = 10 * 60 * 1000 // 10 minutes
     intervalRef.current = setInterval(sendTaskReminder, interval)
     
     setIsActive(true)
-  }, [hasPermission, getCurrentTask, currentTask, showNotification, canSendNotification, updateLastNotificationTime, getCachedQuote, cacheQuote])
+  }, [hasPermission, getCurrentTask, currentTask, showNotification, canSendNotification, updateLastNotificationTime])
 
   // Stop periodic notifications
   const stopPeriodicNotifications = useCallback(() => {
@@ -246,21 +213,8 @@ export const useNotifications = () => {
     updateLastNotificationTime('start', task.id)
 
     try {
-      let quote = getCachedQuote('start')
-      
-      // Try to get fresh quote with timeout
-      try {
-        const freshQuote = await Promise.race([
-          getNotificationQuote(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 500))
-        ])
-        if (freshQuote) {
-          quote = freshQuote
-          cacheQuote('start', quote)
-        }
-      } catch (error) {
-        // Use cached/fallback quote
-      }
+      // Fresh API call - NO CACHING
+      const quote = await getNotificationQuote()
       
       await showNotification(`🚀 Ready to Start: ${task.title}`, {
         body: quote,
@@ -271,8 +225,16 @@ export const useNotifications = () => {
       })
     } catch (error) {
       console.error('Error sending start reminder:', error)
+      // Fallback without quote
+      await showNotification(`🚀 Ready to Start: ${task.title}`, {
+        body: 'Time to begin! 🚀',
+        icon: '/favicon.ico',
+        tag: `start-${task.id}`,
+        requireInteraction: true,
+        data: { taskId: task.id, action: 'start' }
+      })
     }
-  }, [hasPermission, showNotification, canSendNotification, updateLastNotificationTime, getCachedQuote, cacheQuote])
+  }, [hasPermission, showNotification, canSendNotification, updateLastNotificationTime])
 
   // Send task end reminder with rate limiting
   const sendTaskEndReminder = useCallback(async (task) => {
@@ -281,21 +243,8 @@ export const useNotifications = () => {
     updateLastNotificationTime('end', task.id)
 
     try {
-      let quote = getCachedQuote('end')
-      
-      // Try to get fresh quote with timeout
-      try {
-        const freshQuote = await Promise.race([
-          getNotificationQuote(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 500))
-        ])
-        if (freshQuote) {
-          quote = freshQuote
-          cacheQuote('end', quote)
-        }
-      } catch (error) {
-        // Use cached/fallback quote
-      }
+      // Fresh API call - NO CACHING
+      const quote = await getNotificationQuote()
       
       await showNotification(`⏰ Time to Complete: ${task.title}`, {
         body: quote,
@@ -306,8 +255,16 @@ export const useNotifications = () => {
       })
     } catch (error) {
       console.error('Error sending end reminder:', error)
+      // Fallback without quote
+      await showNotification(`⏰ Time to Complete: ${task.title}`, {
+        body: 'Great work! ✅',
+        icon: '/favicon.ico',
+        tag: `end-${task.id}`,
+        requireInteraction: true,
+        data: { taskId: task.id, action: 'complete' }
+      })
     }
-  }, [hasPermission, showNotification, canSendNotification, updateLastNotificationTime, getCachedQuote, cacheQuote])
+  }, [hasPermission, showNotification, canSendNotification, updateLastNotificationTime])
 
   // Cleanup on unmount
   useEffect(() => {

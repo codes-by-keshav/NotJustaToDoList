@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { FaClock, FaChevronUp, FaChevronDown } from 'react-icons/fa'
+import { FaClock } from 'react-icons/fa'
 
 const TimePicker = ({ 
   value, 
@@ -14,6 +14,11 @@ const TimePicker = ({
   const [tempTime, setTempTime] = useState({ hours: '12', minutes: '00', period: 'PM' })
   const [displayValue, setDisplayValue] = useState('')
   const containerRef = useRef(null)
+
+  // Generate time options
+  const hours = Array.from({ length: 12 }, (_, i) => (i + 1).toString().padStart(2, '0'))
+  const minutes = Array.from({ length: 60 }, (_, i) => i.toString().padStart(2, '0'))
+  const periods = ['AM', 'PM']
 
   // Initialize time from value prop
   useEffect(() => {
@@ -51,41 +56,6 @@ const TimePicker = ({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const handleTimeChange = (field, newValue) => {
-    setTempTime(prev => ({
-      ...prev,
-      [field]: newValue
-    }))
-  }
-
-  const incrementTime = (field) => {
-    if (field === 'hours') {
-      const currentHour = parseInt(tempTime.hours)
-      const newHour = currentHour === 12 ? 1 : currentHour + 1
-      handleTimeChange('hours', newHour.toString().padStart(2, '0'))
-    } else if (field === 'minutes') {
-      const currentMinute = parseInt(tempTime.minutes)
-      const newMinute = currentMinute === 59 ? 0 : currentMinute + 1
-      handleTimeChange('minutes', newMinute.toString().padStart(2, '0'))
-    } else if (field === 'period') {
-      handleTimeChange('period', tempTime.period === 'AM' ? 'PM' : 'AM')
-    }
-  }
-
-  const decrementTime = (field) => {
-    if (field === 'hours') {
-      const currentHour = parseInt(tempTime.hours)
-      const newHour = currentHour === 1 ? 12 : currentHour - 1
-      handleTimeChange('hours', newHour.toString().padStart(2, '0'))
-    } else if (field === 'minutes') {
-      const currentMinute = parseInt(tempTime.minutes)
-      const newMinute = currentMinute === 0 ? 59 : currentMinute - 1
-      handleTimeChange('minutes', newMinute.toString().padStart(2, '0'))
-    } else if (field === 'period') {
-      handleTimeChange('period', tempTime.period === 'AM' ? 'PM' : 'AM')
-    }
-  }
-
   const applyTime = () => {
     const hour12 = parseInt(tempTime.hours)
     let hour24 = hour12
@@ -104,38 +74,169 @@ const TimePicker = ({
     setIsOpen(false)
   }
 
-  const TimeSelector = ({ field, value, label: fieldLabel }) => (
-    <div className="flex flex-col items-center">
-      <motion.button
-        type="button"
-        onClick={() => incrementTime(field)}
-        className="p-2 rounded-lg transition-all duration-200 text-accent-100 hover:bg-accent-100 hover:bg-opacity-20"
-        whileHover={{ scale: 1.1 }}
-        whileTap={{ scale: 0.95 }}
-      >
-        <FaChevronUp className="text-sm" />
-      </motion.button>
+  // Fixed Scrollable picker component
+  const ScrollablePicker = ({ items, selectedValue, onValueChange, label: pickerLabel }) => {
+    const [isDragging, setIsDragging] = useState(false)
+    const [isUserScrolling, setIsUserScrolling] = useState(false)
+    const pickerRef = useRef(null)
+    const scrollTimeoutRef = useRef(null)
+    const itemHeight = 40
+    const visibleItems = 5
+    const containerHeight = visibleItems * itemHeight
+
+    const selectedIndex = items.findIndex(item => item === selectedValue)
+
+    // Initialize scroll position
+    useEffect(() => {
+      if (pickerRef.current && !isDragging && !isUserScrolling) {
+        const targetScrollTop = selectedIndex * itemHeight
+        pickerRef.current.scrollTop = targetScrollTop
+      }
+    }, [selectedValue, selectedIndex, isDragging, isUserScrolling])
+
+    const snapToNearestItem = () => {
+      if (!pickerRef.current) return
       
-      <div className="my-2 text-center">
-        <div className="text-2xl font-bold text-white font-exo min-w-[3rem]">
-          {value}
-        </div>
-        <div className="text-xs text-gray-400 font-exo mt-1">
-          {fieldLabel}
+      const scrollTop = pickerRef.current.scrollTop
+      const nearestIndex = Math.round(scrollTop / itemHeight)
+      const clampedIndex = Math.max(0, Math.min(nearestIndex, items.length - 1))
+      
+      // Update the selected value
+      if (items[clampedIndex] !== selectedValue) {
+        onValueChange(items[clampedIndex])
+      }
+      
+      // Smooth scroll to exact position
+      const targetScrollTop = clampedIndex * itemHeight
+      pickerRef.current.scrollTo({
+        top: targetScrollTop,
+        behavior: 'smooth'
+      })
+    }
+
+    const handleScroll = (e) => {
+      // Clear any existing timeout
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current)
+      }
+      
+      setIsUserScrolling(true)
+      
+      // Snap to nearest item after user stops scrolling
+      scrollTimeoutRef.current = setTimeout(() => {
+        setIsUserScrolling(false)
+        setIsDragging(false)
+        snapToNearestItem()
+      }, 150) // 150ms delay after scroll ends
+    }
+
+    const handleTouchStart = (e) => {
+      setIsDragging(true)
+      setIsUserScrolling(true)
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current)
+      }
+    }
+
+    const handleTouchEnd = () => {
+      // Don't immediately set isDragging to false
+      // Let the scroll timeout handle it
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current)
+      }
+      
+      scrollTimeoutRef.current = setTimeout(() => {
+        setIsUserScrolling(false)
+        setIsDragging(false)
+        snapToNearestItem()
+      }, 100)
+    }
+
+    // Cleanup timeout on unmount
+    useEffect(() => {
+      return () => {
+        if (scrollTimeoutRef.current) {
+          clearTimeout(scrollTimeoutRef.current)
+        }
+      }
+    }, [])
+
+    return (
+      <div className="flex flex-col items-center">
+        <div className="text-xs text-gray-400 mb-2 font-exo">{pickerLabel}</div>
+        <div 
+          className="relative overflow-hidden rounded-lg"
+          style={{ 
+            height: containerHeight,
+            background: 'rgba(15, 52, 96, 0.3)',
+            border: '1px solid rgba(0, 212, 255, 0.2)'
+          }}
+        >
+          {/* Selection indicator */}
+          <div 
+            className="absolute left-0 right-0 pointer-events-none z-10 border-t border-b"
+            style={{ 
+              top: (containerHeight / 2) - (itemHeight / 2),
+              height: itemHeight,
+              borderColor: 'rgba(0, 212, 255, 0.5)',
+              backgroundColor: 'rgba(0, 212, 255, 0.1)'
+            }}
+          />
+          
+          {/* Scrollable items */}
+          <div
+            ref={pickerRef}
+            className="h-full overflow-y-scroll scrollbar-hide"
+            style={{ 
+              scrollSnapType: 'y mandatory',
+              paddingTop: containerHeight / 2 - itemHeight / 2,
+              paddingBottom: containerHeight / 2 - itemHeight / 2
+            }}
+            onScroll={handleScroll}
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+            onMouseDown={handleTouchStart}
+            onMouseUp={handleTouchEnd}
+          >
+            {items.map((item, index) => {
+              const isSelected = item === selectedValue
+              const distance = Math.abs(index - selectedIndex)
+              const opacity = Math.max(0.3, 1 - distance * 0.3)
+              const scale = Math.max(0.8, 1 - distance * 0.1)
+              
+              return (
+                <div
+                  key={item}
+                  className="flex items-center justify-center transition-all duration-200 cursor-pointer font-exo"
+                  style={{ 
+                    height: itemHeight,
+                    scrollSnapAlign: 'center',
+                    opacity,
+                    transform: `scale(${scale})`,
+                    color: isSelected ? 'white' : 'rgba(255, 255, 255, 0.7)',
+                    fontWeight: isSelected ? 'bold' : 'normal'
+                  }}
+                  onClick={() => {
+                    onValueChange(item)
+                    // Smooth scroll to clicked item
+                    if (pickerRef.current) {
+                      const targetScrollTop = index * itemHeight
+                      pickerRef.current.scrollTo({
+                        top: targetScrollTop,
+                        behavior: 'smooth'
+                      })
+                    }
+                  }}
+                >
+                  {item}
+                </div>
+              )
+            })}
+          </div>
         </div>
       </div>
-      
-      <motion.button
-        type="button"
-        onClick={() => decrementTime(field)}
-        className="p-2 rounded-lg transition-all duration-200 text-accent-100 hover:bg-accent-100 hover:bg-opacity-20"
-        whileHover={{ scale: 1.1 }}
-        whileTap={{ scale: 0.95 }}
-      >
-        <FaChevronDown className="text-sm" />
-      </motion.button>
-    </div>
-  )
+    )
+  }
 
   return (
     <div ref={containerRef} className="relative">
@@ -200,32 +301,30 @@ const TimePicker = ({
             exit={{ opacity: 0, y: -10, scale: 0.95 }}
             transition={{ duration: 0.2 }}
           >
-            {/* Time Selectors */}
+            {/* Scrollable Time Selectors */}
             <div className="p-6">
-              <div className="grid grid-cols-4 gap-6 items-center">
+              <div className="grid grid-cols-3 gap-6 items-start">
                 {/* Hours */}
-                <TimeSelector 
-                  field="hours" 
-                  value={tempTime.hours} 
+                <ScrollablePicker
+                  items={hours}
+                  selectedValue={tempTime.hours}
+                  onValueChange={(value) => setTempTime(prev => ({ ...prev, hours: value }))}
                   label="Hours"
                 />
                 
-                {/* Separator */}
-                <div className="text-center text-2xl font-bold text-accent-100">
-                  :
-                </div>
-                
                 {/* Minutes */}
-                <TimeSelector 
-                  field="minutes" 
-                  value={tempTime.minutes} 
+                <ScrollablePicker
+                  items={minutes}
+                  selectedValue={tempTime.minutes}
+                  onValueChange={(value) => setTempTime(prev => ({ ...prev, minutes: value }))}
                   label="Minutes"
                 />
                 
                 {/* AM/PM */}
-                <TimeSelector 
-                  field="period" 
-                  value={tempTime.period} 
+                <ScrollablePicker
+                  items={periods}
+                  selectedValue={tempTime.period}
+                  onValueChange={(value) => setTempTime(prev => ({ ...prev, period: value }))}
                   label="Period"
                 />
               </div>
@@ -293,6 +392,17 @@ const TimePicker = ({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Custom scrollbar styles */}
+      <style jsx>{`
+        .scrollbar-hide {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+        .scrollbar-hide::-webkit-scrollbar {
+          display: none;
+        }
+      `}</style>
     </div>
   )
 }

@@ -7,7 +7,7 @@ import { getMotivationalQuote } from '../services/geminiApi'
 const MotivationalQuote = () => {
   const [quote, setQuote] = useState('')
   const [author, setAuthor] = useState('')
-  const [isLoading, setIsLoading] = useState(true) // Start loading immediately
+  const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState(null)
   const [isLiked, setIsLiked] = useState(false)
   const [lastFetchTime, setLastFetchTime] = useState(0)
@@ -81,15 +81,15 @@ const MotivationalQuote = () => {
 
   return (
     <motion.section
-      className="relative max-w-4xl mx-auto mb-12"
+      className="relative w-full flex justify-center mb-12"
       initial={{ opacity: 0, y: 50 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.8, delay: 0.2 }}
       style={{ fontFamily: 'Exo 2, sans-serif' }}
     >
-      {/* Background Card */}
+      {/* Background Card - Centered */}
       <motion.div 
-        className="relative rounded-3xl p-8 shadow-2xl overflow-hidden"
+        className="relative rounded-3xl p-8 shadow-2xl overflow-hidden w-full max-w-4xl mx-auto"
         style={{
           background: 'linear-gradient(135deg, var(--color-dark-200), var(--color-dark-300))',
           backdropFilter: 'blur(16px)',
