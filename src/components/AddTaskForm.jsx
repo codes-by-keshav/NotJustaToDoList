@@ -1,8 +1,7 @@
 import React, { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { FaPlus, FaTimes, FaFlag, FaTag, FaAlignLeft } from 'react-icons/fa'
+import { FaPlus, FaTimes, FaFlag, FaTag, FaAlignLeft, FaClock } from 'react-icons/fa'
 import { MdSave, MdCancel } from 'react-icons/md'
-import TimePicker from './TimePicker'
 
 const AddTaskForm = ({ isOpen, onClose, onSubmit, loading = false }) => {
   const [formData, setFormData] = useState({
@@ -17,13 +16,13 @@ const AddTaskForm = ({ isOpen, onClose, onSubmit, loading = false }) => {
 
   // Categories for tasks
   const categories = [
-    { value: 'work', label: 'Work', color: 'bg-blue-500' },
-    { value: 'personal', label: 'Personal', color: 'bg-green-500' },
-    { value: 'fitness', label: 'Fitness', color: 'bg-red-500' },
-    { value: 'learning', label: 'Learning', color: 'bg-purple-500' },
-    { value: 'social', label: 'Social', color: 'bg-pink-500' },
-    { value: 'creative', label: 'Creative', color: 'bg-yellow-500' },
-    { value: 'health', label: 'Health', color: 'bg-teal-500' }
+    { value: 'work', label: 'Work', color: 'bg-blue-500', icon: '💼' },
+    { value: 'personal', label: 'Personal', color: 'bg-green-500', icon: '👤' },
+    { value: 'fitness', label: 'Fitness', color: 'bg-red-500', icon: '💪' },
+    { value: 'learning', label: 'Learning', color: 'bg-purple-500', icon: '📚' },
+    { value: 'social', label: 'Social', color: 'bg-pink-500', icon: '👥' },
+    { value: 'creative', label: 'Creative', color: 'bg-yellow-500', icon: '🎨' },
+    { value: 'health', label: 'Health', color: 'bg-teal-500', icon: '🏥' }
   ]
 
   // Priority levels
@@ -285,7 +284,7 @@ const AddTaskForm = ({ isOpen, onClose, onSubmit, loading = false }) => {
               />
             </motion.div>
 
-            {/* Time Selection */}
+            {/* Time Selection - Updated to match EditTaskModal */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Start Time */}
               <motion.div
@@ -293,14 +292,35 @@ const AddTaskForm = ({ isOpen, onClose, onSubmit, loading = false }) => {
                 animate={{ y: 0, opacity: 1 }}
                 transition={{ delay: 0.4 }}
               >
-                <TimePicker
-                  label="Start Time"
+                <label className="block text-sm font-medium text-gray-300 mb-2 font-exo">
+                  <FaClock className="inline mr-2" />
+                  Start Time *
+                </label>
+                <input
+                  type="time"
                   value={formData.scheduledTime}
-                  onChange={(value) => handleTimeChange('scheduledTime', value)}
-                  placeholder="Select start time"
-                  error={errors.scheduledTime}
+                  onChange={(e) => handleTimeChange('scheduledTime', e.target.value)}
+                  className={`w-full px-4 py-3 rounded-xl transition-all duration-300 font-exo ${
+                    errors.scheduledTime 
+                      ? 'border-red-500 focus:border-red-400' 
+                      : 'border-transparent focus:border-accent-100'
+                  }`}
+                  style={{
+                    backgroundColor: 'rgba(15, 52, 96, 0.5)',
+                    color: 'white',
+                    border: '1px solid'
+                  }}
                   required
                 />
+                {errors.scheduledTime && (
+                  <motion.p
+                    className="text-red-400 text-sm mt-1 font-exo"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                  >
+                    {errors.scheduledTime}
+                  </motion.p>
+                )}
               </motion.div>
 
               {/* End Time */}
@@ -309,14 +329,35 @@ const AddTaskForm = ({ isOpen, onClose, onSubmit, loading = false }) => {
                 animate={{ y: 0, opacity: 1 }}
                 transition={{ delay: 0.5 }}
               >
-                <TimePicker
-                  label="End Time"
+                <label className="block text-sm font-medium text-gray-300 mb-2 font-exo">
+                  <FaClock className="inline mr-2" />
+                  End Time *
+                </label>
+                <input
+                  type="time"
                   value={formData.endTime}
-                  onChange={(value) => handleTimeChange('endTime', value)}
-                  placeholder="Select end time"
-                  error={errors.endTime}
+                  onChange={(e) => handleTimeChange('endTime', e.target.value)}
+                  className={`w-full px-4 py-3 rounded-xl transition-all duration-300 font-exo ${
+                    errors.endTime 
+                      ? 'border-red-500 focus:border-red-400' 
+                      : 'border-transparent focus:border-accent-100'
+                  }`}
+                  style={{
+                    backgroundColor: 'rgba(15, 52, 96, 0.5)',
+                    color: 'white',
+                    border: '1px solid'
+                  }}
                   required
                 />
+                {errors.endTime && (
+                  <motion.p
+                    className="text-red-400 text-sm mt-1 font-exo"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                  >
+                    {errors.endTime}
+                  </motion.p>
+                )}
               </motion.div>
             </div>
 
@@ -366,7 +407,7 @@ const AddTaskForm = ({ isOpen, onClose, onSubmit, loading = false }) => {
                   }}
                 >
                   {priorities.map(priority => (
-                    <option key={priority.value} value={priority.value}>
+                    <option key={priority.value} value={priority.value} className="bg-gray-800">
                       {priority.label}
                     </option>
                   ))}
@@ -395,8 +436,8 @@ const AddTaskForm = ({ isOpen, onClose, onSubmit, loading = false }) => {
                   }}
                 >
                   {categories.map(category => (
-                    <option key={category.value} value={category.value}>
-                      {category.label}
+                    <option key={category.value} value={category.value} className="bg-gray-800">
+                      {category.icon} {category.label}
                     </option>
                   ))}
                 </select>
