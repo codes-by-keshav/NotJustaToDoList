@@ -1,10 +1,8 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { FaPlus, FaTimes, FaFlag, FaTag, FaAlignLeft } from 'react-icons/fa'
-import { MdSave, MdCancel } from 'react-icons/md'
-import TimePicker from './TimePicker'
+import { FaEdit, FaTimes, FaClock, FaFlag, FaTag, FaAlignLeft } from 'react-icons/fa'
 
-const AddTaskForm = ({ isOpen, onClose, onSubmit, loading = false }) => {
+const EditTaskModal = ({ isOpen, onClose, onSave, todo, loading = false }) => {
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -17,13 +15,13 @@ const AddTaskForm = ({ isOpen, onClose, onSubmit, loading = false }) => {
 
   // Categories for tasks
   const categories = [
-    { value: 'work', label: 'Work', color: 'bg-blue-500' },
-    { value: 'personal', label: 'Personal', color: 'bg-green-500' },
-    { value: 'fitness', label: 'Fitness', color: 'bg-red-500' },
-    { value: 'learning', label: 'Learning', color: 'bg-purple-500' },
-    { value: 'social', label: 'Social', color: 'bg-pink-500' },
-    { value: 'creative', label: 'Creative', color: 'bg-yellow-500' },
-    { value: 'health', label: 'Health', color: 'bg-teal-500' }
+    { value: 'work', label: 'Work', color: 'bg-blue-500', icon: '💼' },
+    { value: 'personal', label: 'Personal', color: 'bg-green-500', icon: '👤' },
+    { value: 'fitness', label: 'Fitness', color: 'bg-red-500', icon: '💪' },
+    { value: 'learning', label: 'Learning', color: 'bg-purple-500', icon: '📚' },
+    { value: 'social', label: 'Social', color: 'bg-pink-500', icon: '👥' },
+    { value: 'creative', label: 'Creative', color: 'bg-yellow-500', icon: '🎨' },
+    { value: 'health', label: 'Health', color: 'bg-teal-500', icon: '🏥' }
   ]
 
   // Priority levels
@@ -33,13 +31,28 @@ const AddTaskForm = ({ isOpen, onClose, onSubmit, loading = false }) => {
     { value: 'high', label: 'High Priority', color: 'text-red-400' }
   ]
 
+  // Populate form when todo changes
+  useEffect(() => {
+    if (todo && isOpen) {
+      setFormData({
+        title: todo.title || '',
+        description: todo.description || '',
+        scheduledTime: todo.scheduledTime || '',
+        endTime: todo.endTime || '',
+        priority: todo.priority || 'medium',
+        category: todo.category || 'personal'
+      })
+      setErrors({})
+    }
+  }, [todo, isOpen])
+
   const handleInputChange = (e) => {
     const { name, value } = e.target
     setFormData(prev => ({
       ...prev,
       [name]: value
     }))
-
+    
     // Clear error when user starts typing
     if (errors[name]) {
       setErrors(prev => ({
@@ -54,8 +67,7 @@ const AddTaskForm = ({ isOpen, onClose, onSubmit, loading = false }) => {
       ...prev,
       [field]: value
     }))
-
-    // Clear error when user selects time
+    
     if (errors[field]) {
       setErrors(prev => ({
         ...prev,
@@ -64,7 +76,6 @@ const AddTaskForm = ({ isOpen, onClose, onSubmit, loading = false }) => {
     }
   }
 
-  // UPDATED: Enhanced validation for cross-day tasks
   const validateForm = () => {
     const newErrors = {}
 
@@ -102,35 +113,24 @@ const AddTaskForm = ({ isOpen, onClose, onSubmit, loading = false }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-
+    
     if (!validateForm()) {
       return
     }
 
     try {
-      const todoData = {
-        ...formData,
-        started: false,
-        completed: false,
-        failed: false,
-        notifiedStart: false,
-        notifiedEnd: false
-      }
-      await onSubmit(todoData)
-
-      // Reset form
-      setFormData({
-        title: '',
-        description: '',
-        scheduledTime: '',
-        endTime: '',
-        priority: 'medium',
-        category: 'personal'
+      await onSave(todo.id, {
+        title: formData.title.trim(),
+        description: formData.description.trim(),
+        scheduledTime: formData.scheduledTime,
+        endTime: formData.endTime,
+        priority: formData.priority,
+        category: formData.category
       })
-      setErrors({})
-      onClose()
+      
+      handleCancel()
     } catch (error) {
-      console.error('Error adding task:', error)
+      console.error('Error updating task:', error)
     }
   }
 
@@ -152,7 +152,7 @@ const AddTaskForm = ({ isOpen, onClose, onSubmit, loading = false }) => {
   return (
     <AnimatePresence>
       <motion.div
-        className="fixed inset-0 z-50 flex items-center justify-center"
+        className="fixed inset-0 z-50 flex items-center justify-center p-4"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
@@ -167,12 +167,12 @@ const AddTaskForm = ({ isOpen, onClose, onSubmit, loading = false }) => {
           exit={{ opacity: 0 }}
         />
 
-        {/* Form Modal */}
+        {/* Modal */}
         <motion.div
-          className="relative w-full max-w-2xl mx-4 rounded-3xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto"
+          className="relative w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden"
           style={{
             background: 'linear-gradient(135deg, var(--color-dark-200), var(--color-dark-300))',
-            border: '1px solid rgba(0, 212, 255, 0.2)'
+            border: '1px solid rgba(0, 212, 255, 0.3)'
           }}
           initial={{ scale: 0.9, opacity: 0, y: 50 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
@@ -181,29 +181,21 @@ const AddTaskForm = ({ isOpen, onClose, onSubmit, loading = false }) => {
         >
           {/* Header */}
           <div
-            className="p-6 border-b sticky top-0 z-10"
-            style={{ 
-              borderColor: 'rgba(0, 212, 255, 0.2)',
-              background: 'linear-gradient(135deg, var(--color-dark-200), var(--color-dark-300))'
-            }}
+            className="p-6 border-b"
+            style={{ borderColor: 'rgba(0, 212, 255, 0.2)' }}
           >
             <div className="flex items-center justify-between">
-              <motion.div
-                className="flex items-center gap-3"
-                initial={{ x: -20, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                transition={{ delay: 0.1 }}
-              >
+              <div className="flex items-center gap-3">
                 <div
                   className="p-2 rounded-xl"
                   style={{ background: 'linear-gradient(135deg, var(--color-accent-100), var(--color-accent-200))' }}
                 >
-                  <FaPlus className="text-white text-lg" />
+                  <FaEdit className="text-white text-lg" />
                 </div>
-                <h2 className="text-2xl font-bold text-white font-exo">
-                  Add New Task
+                <h2 className="text-xl font-bold text-white font-exo">
+                  Edit Task
                 </h2>
-              </motion.div>
+              </div>
 
               <motion.button
                 onClick={handleCancel}
@@ -211,25 +203,18 @@ const AddTaskForm = ({ isOpen, onClose, onSubmit, loading = false }) => {
                 style={{ backgroundColor: 'rgba(15, 52, 96, 0.5)' }}
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.95 }}
-                initial={{ x: 20, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                transition={{ delay: 0.1 }}
               >
                 <FaTimes className="text-lg" />
               </motion.button>
             </div>
           </div>
 
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          {/* Content */}
+          <form onSubmit={handleSubmit} className="p-6 space-y-6 max-h-96 overflow-y-auto">
             {/* Task Title */}
-            <motion.div
-              initial={{ y: 20, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              transition={{ delay: 0.2 }}
-            >
+            <div>
               <label className="block text-sm font-medium text-gray-300 mb-2 font-exo">
-                <FaTag className="inline mr-2" />
+                <FaEdit className="inline mr-2" />
                 Task Title *
               </label>
               <input
@@ -238,34 +223,23 @@ const AddTaskForm = ({ isOpen, onClose, onSubmit, loading = false }) => {
                 value={formData.title}
                 onChange={handleInputChange}
                 placeholder="Enter task title..."
-                className={`w-full px-4 py-3 rounded-xl transition-all duration-300 font-exo
-                  ${errors.title
-                    ? 'border-red-500 focus:border-red-400'
-                    : 'border-transparent focus:border-accent-100'
-                  }`}
+                className={`w-full px-4 py-3 rounded-xl border-transparent focus:border-accent-100 transition-all duration-300 font-exo ${
+                  errors.title ? 'border-red-500' : ''
+                }`}
                 style={{
                   backgroundColor: 'rgba(15, 52, 96, 0.5)',
-                  color: 'white',
-                  border: '1px solid'
+                  color: 'white'
                 }}
+                disabled={loading}
+                required
               />
               {errors.title && (
-                <motion.p
-                  className="text-red-400 text-sm mt-1 font-exo"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                >
-                  {errors.title}
-                </motion.p>
+                <p className="text-red-400 text-sm mt-1 font-exo">{errors.title}</p>
               )}
-            </motion.div>
+            </div>
 
-            {/* Task Description */}
-            <motion.div
-              initial={{ y: 20, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              transition={{ delay: 0.3 }}
-            >
+            {/* Description */}
+            <div>
               <label className="block text-sm font-medium text-gray-300 mb-2 font-exo">
                 <FaAlignLeft className="inline mr-2" />
                 Description
@@ -276,48 +250,66 @@ const AddTaskForm = ({ isOpen, onClose, onSubmit, loading = false }) => {
                 onChange={handleInputChange}
                 placeholder="Add task description..."
                 rows={3}
-                className="w-full px-4 py-3 rounded-xl border-transparent focus:border-accent-100 transition-all duration-300 font-exo resize-none"
+                className="w-full px-4 py-3 rounded-xl border-transparent focus:border-accent-100 transition-all duration-300 resize-none font-exo"
                 style={{
                   backgroundColor: 'rgba(15, 52, 96, 0.5)',
-                  color: 'white',
-                  border: '1px solid'
+                  color: 'white'
                 }}
+                disabled={loading}
               />
-            </motion.div>
+            </div>
 
-            {/* Time Selection */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Time Fields */}
+            <div className="grid grid-cols-2 gap-4">
               {/* Start Time */}
-              <motion.div
-                initial={{ y: 20, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.4 }}
-              >
-                <TimePicker
-                  label="Start Time"
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2 font-exo">
+                  <FaClock className="inline mr-2" />
+                  Start Time *
+                </label>
+                <input
+                  type="time"
                   value={formData.scheduledTime}
-                  onChange={(value) => handleTimeChange('scheduledTime', value)}
-                  placeholder="Select start time"
-                  error={errors.scheduledTime}
+                  onChange={(e) => handleTimeChange('scheduledTime', e.target.value)}
+                  className={`w-full px-4 py-3 rounded-xl border-transparent focus:border-accent-100 transition-all duration-300 font-exo ${
+                    errors.scheduledTime ? 'border-red-500' : ''
+                  }`}
+                  style={{
+                    backgroundColor: 'rgba(15, 52, 96, 0.5)',
+                    color: 'white'
+                  }}
+                  disabled={loading}
                   required
                 />
-              </motion.div>
+                {errors.scheduledTime && (
+                  <p className="text-red-400 text-sm mt-1 font-exo">{errors.scheduledTime}</p>
+                )}
+              </div>
 
               {/* End Time */}
-              <motion.div
-                initial={{ y: 20, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.5 }}
-              >
-                <TimePicker
-                  label="End Time"
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2 font-exo">
+                  <FaClock className="inline mr-2" />
+                  End Time *
+                </label>
+                <input
+                  type="time"
                   value={formData.endTime}
-                  onChange={(value) => handleTimeChange('endTime', value)}
-                  placeholder="Select end time"
-                  error={errors.endTime}
+                  onChange={(e) => handleTimeChange('endTime', e.target.value)}
+                  className={`w-full px-4 py-3 rounded-xl border-transparent focus:border-accent-100 transition-all duration-300 font-exo ${
+                    errors.endTime ? 'border-red-500' : ''
+                  }`}
+                  style={{
+                    backgroundColor: 'rgba(15, 52, 96, 0.5)',
+                    color: 'white'
+                  }}
+                  disabled={loading}
                   required
                 />
-              </motion.div>
+                {errors.endTime && (
+                  <p className="text-red-400 text-sm mt-1 font-exo">{errors.endTime}</p>
+                )}
+              </div>
             </div>
 
             {/* Cross-day info */}
@@ -327,15 +319,10 @@ const AddTaskForm = ({ isOpen, onClose, onSubmit, loading = false }) => {
                 const endTime = new Date(`2000-01-01T${formData.endTime}`)
                 if (endTime <= startTime) {
                   return (
-                    <motion.div
-                      className="p-3 rounded-lg text-sm text-blue-400 font-exo"
-                      style={{ backgroundColor: 'rgba(59, 130, 246, 0.1)' }}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                    >
+                    <div className="p-3 rounded-lg text-sm text-blue-400 font-exo" style={{ backgroundColor: 'rgba(59, 130, 246, 0.1)' }}>
                       <span className="text-lg mr-2">ℹ️</span>
                       This task will end the next day at {formData.endTime}
-                    </motion.div>
+                    </div>
                   )
                 }
                 return null
@@ -343,13 +330,9 @@ const AddTaskForm = ({ isOpen, onClose, onSubmit, loading = false }) => {
             )}
 
             {/* Priority and Category */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-4">
               {/* Priority */}
-              <motion.div
-                initial={{ y: 20, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.6 }}
-              >
+              <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2 font-exo">
                   <FaFlag className="inline mr-2" />
                   Priority
@@ -361,24 +344,20 @@ const AddTaskForm = ({ isOpen, onClose, onSubmit, loading = false }) => {
                   className="w-full px-4 py-3 rounded-xl border-transparent focus:border-accent-100 transition-all duration-300 font-exo"
                   style={{
                     backgroundColor: 'rgba(15, 52, 96, 0.5)',
-                    color: 'white',
-                    border: '1px solid'
+                    color: 'white'
                   }}
+                  disabled={loading}
                 >
                   {priorities.map(priority => (
-                    <option key={priority.value} value={priority.value}>
+                    <option key={priority.value} value={priority.value} className="bg-gray-800">
                       {priority.label}
                     </option>
                   ))}
                 </select>
-              </motion.div>
+              </div>
 
               {/* Category */}
-              <motion.div
-                initial={{ y: 20, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.7 }}
-              >
+              <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2 font-exo">
                   <FaTag className="inline mr-2" />
                   Category
@@ -390,64 +369,47 @@ const AddTaskForm = ({ isOpen, onClose, onSubmit, loading = false }) => {
                   className="w-full px-4 py-3 rounded-xl border-transparent focus:border-accent-100 transition-all duration-300 font-exo"
                   style={{
                     backgroundColor: 'rgba(15, 52, 96, 0.5)',
-                    color: 'white',
-                    border: '1px solid'
+                    color: 'white'
                   }}
+                  disabled={loading}
                 >
                   {categories.map(category => (
-                    <option key={category.value} value={category.value}>
-                      {category.label}
+                    <option key={category.value} value={category.value} className="bg-gray-800">
+                      {category.icon} {category.label}
                     </option>
                   ))}
                 </select>
-              </motion.div>
+              </div>
             </div>
 
             {/* Action Buttons */}
-            <motion.div
-              className="flex gap-4 pt-4"
-              initial={{ y: 20, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              transition={{ delay: 0.8 }}
-            >
+            <div className="flex gap-3 pt-4">
               <motion.button
                 type="button"
                 onClick={handleCancel}
-                disabled={loading}
-                className="flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-medium transition-all duration-300 disabled:opacity-50 text-gray-300 hover:text-white font-exo"
-                style={{ backgroundColor: 'rgba(15, 52, 96, 0.7)' }}
+                className="flex-1 px-4 py-3 rounded-xl font-medium transition-all duration-300 text-gray-300 font-exo"
+                style={{ backgroundColor: 'rgba(75, 85, 99, 0.5)' }}
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
+                disabled={loading}
               >
-                <MdCancel />
                 Cancel
               </motion.button>
-
+              
               <motion.button
                 type="submit"
                 disabled={loading}
-                className="flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-medium transition-all duration-300 disabled:opacity-50 text-white font-exo"
+                className="flex-1 px-4 py-3 rounded-xl font-medium transition-all duration-300 disabled:opacity-50 text-white font-exo"
                 style={{ background: 'linear-gradient(135deg, var(--color-accent-100), var(--color-accent-200))' }}
-                whileHover={{
+                whileHover={{ 
                   scale: 1.02,
-                  boxShadow: "0 0 25px rgba(0, 212, 255, 0.4)"
+                  boxShadow: "0 0 20px rgba(0, 212, 255, 0.4)"
                 }}
                 whileTap={{ scale: 0.98 }}
               >
-                {loading ? (
-                  <motion.div
-                    animate={{ rotate: 360 }}
-                    transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                    className="w-5 h-5 border-2 border-white border-t-transparent rounded-full"
-                  />
-                ) : (
-                  <>
-                    <MdSave />
-                    Create Task
-                  </>
-                )}
+                {loading ? 'Saving...' : 'Save Changes'}
               </motion.button>
-            </motion.div>
+            </div>
           </form>
         </motion.div>
       </motion.div>
@@ -455,4 +417,4 @@ const AddTaskForm = ({ isOpen, onClose, onSubmit, loading = false }) => {
   )
 }
 
-export default AddTaskForm
+export default EditTaskModal

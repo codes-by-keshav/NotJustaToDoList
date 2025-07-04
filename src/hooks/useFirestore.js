@@ -28,47 +28,12 @@ export const useFirestore = () => {
     return today.toISOString().split('T')[0] // YYYY-MM-DD format
   }
 
-  // Get all todos
-  const getTodos = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    
-    try {
-      let todos
-      
-      if (useFirebase) {
-        console.log('Fetching todos from Firebase...')
-        todos = await firestoreService.getTodos()
-      } else {
-        console.log('Fetching todos from localStorage...')
-        todos = await getLocalTodos()
-      }
-      
-      setLoading(false)
-      return todos
-    } catch (err) {
-      console.error('Error fetching todos:', err)
-      
-      // Fallback to localStorage if Firebase fails
-      if (useFirebase) {
-        console.log('Firebase failed, falling back to localStorage')
-        try {
-          const todos = await getLocalTodos()
-          setError('Using offline mode - Firebase unavailable')
-          setLoading(false)
-          return todos
-        } catch (localErr) {
-          setError('Failed to fetch todos')
-          setLoading(false)
-          throw localErr
-        }
-      } else {
-        setError('Failed to fetch todos')
-        setLoading(false)
-        throw err
-      }
-    }
-  }, [useFirebase])
+  // Get yesterday's date string
+  const getYesterdayDateString = () => {
+    const yesterday = new Date()
+    yesterday.setDate(yesterday.getDate() - 1)
+    return yesterday.toISOString().split('T')[0]
+  }
 
   // Add new todo with date fields
   const addTodo = useCallback(async (todoData) => {
@@ -118,6 +83,17 @@ export const useFirestore = () => {
         try {
           await simulateDelay()
           
+          const todoWithDates = {
+            ...todoData,
+            scheduledDate: todoData.scheduledDate || getTodayDateString(),
+            createdAt: todoData.createdAt || new Date().toISOString(),
+            started: false,
+            completed: false,
+            failed: false,
+            notifiedStart: false,
+            notifiedEnd: false
+          }
+          
           const newTodo = {
             id: Date.now().toString(),
             ...todoWithDates,
@@ -143,6 +119,178 @@ export const useFirestore = () => {
       }
     }
   }, [useFirebase])
+
+  // Get all todos
+  const getTodos = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    
+    try {
+      let todos
+      
+      if (useFirebase) {
+        console.log('Fetching todos from Firebase...')
+        todos = await firestoreService.getTodos()
+      } else {
+        console.log('Fetching todos from localStorage...')
+        todos = await getLocalTodos()
+      }
+      
+      setLoading(false)
+      return todos
+    } catch (err) {
+      console.error('Error fetching todos:', err)
+      
+      // Fallback to localStorage if Firebase fails
+      if (useFirebase) {
+        console.log('Firebase failed, falling back to localStorage')
+        try {
+          const todos = await getLocalTodos()
+          setError('Using offline mode - Firebase unavailable')
+          setLoading(false)
+          return todos
+        } catch (localErr) {
+          setError('Failed to fetch todos')
+          setLoading(false)
+          throw localErr
+        }
+      } else {
+        setError('Failed to fetch todos')
+        setLoading(false)
+        throw err
+      }
+    }
+  }, [useFirebase])
+
+  // Get todos by specific date
+  const getTodosByDate = useCallback(async (date) => {
+    setLoading(true)
+    setError(null)
+    
+    try {
+      let todos
+      
+      if (useFirebase) {
+        console.log(`Fetching todos for ${date} from Firebase...`)
+        todos = await firestoreService.getTodosByDate(date)
+      } else {
+        console.log(`Fetching todos for ${date} from localStorage...`)
+        const allTodos = await getLocalTodos()
+        todos = allTodos.filter(todo => todo.scheduledDate === date)
+        
+        // Sort by scheduled time
+        todos.sort((a, b) => {
+          const timeA = new Date(`2000-01-01T${a.scheduledTime}`)
+          const timeB = new Date(`2000-01-01T${b.scheduledTime}`)
+          return timeA - timeB
+        })
+      }
+      
+      setLoading(false)
+      return todos
+    } catch (err) {
+      console.error('Error fetching todos by date:', err)
+      
+      // Fallback to localStorage if Firebase fails
+      if (useFirebase) {
+        console.log('Firebase failed, falling back to localStorage')
+        try {
+          const allTodos = await getLocalTodos()
+          const todos = allTodos.filter(todo => todo.scheduledDate === date)
+          
+          todos.sort((a, b) => {
+            const timeA = new Date(`2000-01-01T${a.scheduledTime}`)
+            const timeB = new Date(`2000-01-01T${b.scheduledTime}`)
+            return timeA - timeB
+          })
+          
+          setError('Using offline mode - Firebase unavailable')
+          setLoading(false)
+          return todos
+        } catch (localErr) {
+          setError('Failed to fetch todos by date')
+          setLoading(false)
+          throw localErr
+        }
+      } else {
+        setError('Failed to fetch todos by date')
+        setLoading(false)
+        throw err
+      }
+    }
+  }, [useFirebase])
+
+  // Copy previous day's timetable
+  const copyPreviousDayTimetable = useCallback(async (sourceDate, targetDate) => {
+    setLoading(true)
+    setError(null)
+    
+    try {
+      console.log(`Copying timetable from ${sourceDate} to ${targetDate}`)
+      
+      // Get todos from source date
+      const sourceTodos = await getTodosByDate(sourceDate)
+      
+      if (sourceTodos.length === 0) {
+        setLoading(false)
+        return { success: false, message: 'No tasks found for the selected date' }
+      }
+      
+      // Create new todos for target date
+      const newTodos = []
+      
+      for (const todo of sourceTodos) {
+        const newTodoData = {
+          title: todo.title,
+          description: todo.description,
+          scheduledTime: todo.scheduledTime,
+          endTime: todo.endTime,
+          priority: todo.priority,
+          category: todo.category,
+          scheduledDate: targetDate,
+          started: false,
+          completed: false,
+          failed: false,
+          notifiedStart: false,
+          notifiedEnd: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
+        
+        // Use the internal add logic to avoid circular dependency
+        let newTodo
+        
+        if (useFirebase) {
+          newTodo = await firestoreService.addTodo(newTodoData)
+        } else {
+          await simulateDelay(100) // Shorter delay for bulk operations
+          
+          newTodo = {
+            id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            ...newTodoData
+          }
+          
+          const currentTodos = await getLocalTodos()
+          const updatedTodos = [...currentTodos, newTodo]
+          await saveLocalTodos(updatedTodos)
+        }
+        
+        newTodos.push(newTodo)
+      }
+      
+      setLoading(false)
+      return { 
+        success: true, 
+        message: `Copied ${newTodos.length} tasks from ${sourceDate}`,
+        todos: newTodos
+      }
+    } catch (err) {
+      console.error('Error copying timetable:', err)
+      setError('Failed to copy timetable')
+      setLoading(false)
+      throw err
+    }
+  }, [useFirebase, getTodosByDate])
 
   // Update todo - Return complete updated todo
   const updateTodo = useCallback(async (todoId, updates) => {
@@ -260,23 +408,6 @@ export const useFirestore = () => {
     }
   }, [useFirebase])
 
-  // Get todos by date
-  const getTodosByDate = useCallback(async (date) => {
-    const todos = await getTodos()
-    const targetDate = new Date(date).toISOString().split('T')[0]
-    
-    return todos.filter(todo => {
-      if (todo.scheduledDate) {
-        return todo.scheduledDate === targetDate
-      }
-      if (todo.createdAt) {
-        const todoDate = new Date(todo.createdAt).toISOString().split('T')[0]
-        return todoDate === targetDate
-      }
-      return false
-    })
-  }, [getTodos])
-
   // Get statistics
   const getStats = useCallback(async () => {
     try {
@@ -335,10 +466,13 @@ export const useFirestore = () => {
     updateTodo,
     deleteTodo,
     getTodosByDate,
+    copyPreviousDayTimetable,
     getStats,
     clearAllTodos,
     
     // Utilities
-    clearError: () => setError(null)
+    clearError: () => setError(null),
+    getTodayDateString,
+    getYesterdayDateString
   }
 }

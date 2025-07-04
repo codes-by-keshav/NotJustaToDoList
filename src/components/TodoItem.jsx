@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { FaPlay, FaStop, FaClock, FaFlag, FaTag, FaTrash, FaCheck } from 'react-icons/fa'
+import { FaPlay, FaStop, FaCheck, FaClock, FaTrash, FaEdit } from 'react-icons/fa'
 import { MdTimer, MdTimerOff } from 'react-icons/md'
-import { getTaskMotivationalQuote } from '../services/geminiApi'
+import DeleteConfirmModal from './DeleteConfirmModal'
+import EditTaskModal from './EditTaskModal'
 
 const TodoItem = ({ todo, currentTime, onUpdate, onDelete }) => {
   const [timeStatus, setTimeStatus] = useState('waiting')
@@ -11,7 +12,8 @@ const TodoItem = ({ todo, currentTime, onUpdate, onDelete }) => {
   const [canEnd, setCanEnd] = useState(false)
   const [motivationalQuote, setMotivationalQuote] = useState('')
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
-  const quoteFetchedRef = useRef(false) // Prevent multiple API calls
+  const [showEditModal, setShowEditModal] = useState(false)
+  const quoteFetchedRef = useRef(false)
 
   // Priority colors
   const priorityConfig = {
@@ -35,13 +37,22 @@ const TodoItem = ({ todo, currentTime, onUpdate, onDelete }) => {
   const getScheduledDateTime = () => {
     const today = new Date()
     const [hours, minutes] = todo.scheduledTime.split(':')
-    return new Date(today.getFullYear(), today.getMonth(), today.getDate(), parseInt(hours), parseInt(minutes))
+    const scheduledDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), parseInt(hours), parseInt(minutes))
+    return scheduledDate
   }
 
   const getEndDateTime = () => {
     const today = new Date()
     const [hours, minutes] = todo.endTime.split(':')
-    return new Date(today.getFullYear(), today.getMonth(), today.getDate(), parseInt(hours), parseInt(minutes))
+    const endDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), parseInt(hours), parseInt(minutes))
+    
+    // If end time is earlier than scheduled time, it means it's next day
+    const scheduledDate = getScheduledDateTime()
+    if (endDate <= scheduledDate) {
+      endDate.setDate(endDate.getDate() + 1)
+    }
+    
+    return endDate
   }
 
   // Time status logic
@@ -49,119 +60,90 @@ const TodoItem = ({ todo, currentTime, onUpdate, onDelete }) => {
     const scheduledTime = getScheduledDateTime()
     const endTime = getEndDateTime()
     const now = currentTime
-    
-    // Calculate time differences in minutes
-    const minutesToStart = Math.floor((scheduledTime - now) / (1000 * 60))
-    const minutesToEnd = Math.floor((endTime - now) / (1000 * 60))
-    const minutesFromStart = Math.floor((now - scheduledTime) / (1000 * 60))
 
-    // If task is already marked as failed, keep it failed
-    if (todo.failed) {
-      setTimeStatus('failed')
-      setCanStart(false)
-      setCanEnd(false)
-      setTimeRemaining('Task failed')
-      return
-    }
+    // Calculate time remaining
+    const diffToStart = scheduledTime - now
+    const diffToEnd = endTime - now
 
-    // If task is completed, show completed status
     if (todo.completed) {
       setTimeStatus('completed')
+      setTimeRemaining('')
       setCanStart(false)
       setCanEnd(false)
-      setTimeRemaining('Task completed')
-      return
-    }
-
-    // More than 5 minutes before start time
-    if (minutesToStart > 5) {
-      setTimeStatus('waiting')
+    } else if (todo.failed) {
+      setTimeStatus('failed')
+      setTimeRemaining('')
       setCanStart(false)
       setCanEnd(false)
-      setTimeRemaining(`${Math.abs(minutesToStart)} minutes until start`)
-    } 
-    // Within 5 minutes of start time (±5 minutes)
-    else if (minutesToStart >= -5 && minutesToStart <= 5) {
-      setTimeStatus('ready-to-start')
-      setCanStart(!todo.started)
-      setCanEnd(false)
-      setTimeRemaining(`Start window open`)
-    } 
-    // Between start and end time (but not in end window)
-    else if (minutesFromStart > 5 && minutesToEnd > 5) {
-      setTimeStatus('in-progress')
+    } else if (now >= endTime && !todo.started) {
+      // Task time has passed without starting
+      setTimeStatus('failed')
+      setTimeRemaining('')
       setCanStart(false)
       setCanEnd(false)
-      setTimeRemaining(`${Math.abs(minutesToEnd)} minutes until end`)
-    } 
-    // Within 5 minutes of end time (±5 minutes)
-    else if (minutesToEnd >= -5 && minutesToEnd <= 5) {
-      setTimeStatus('ready-to-end')
-      setCanStart(false)
-      setCanEnd(todo.started && !todo.completed)
-      setTimeRemaining(`End window open`)
-    } 
-    // Past end time - mark as failed only if not started or not completed
-    else if (minutesToEnd < -5) {
-      if (!todo.started || (todo.started && !todo.completed)) {
-        setTimeStatus('failed')
-        setCanStart(false)
-        setCanEnd(false)
-        setTimeRemaining('Task failed')
-        
-        // Auto-mark as failed in database
-        if (!todo.failed) {
-          onUpdate(todo.id, { failed: true })
-        }
-      } else {
-        setTimeStatus('completed')
-        setCanStart(false)
-        setCanEnd(false)
-        setTimeRemaining('Task completed')
+      
+      // Auto-mark as failed if not already
+      if (!todo.failed) {
+        onUpdate(todo.id, { failed: true })
       }
+    } else if (now >= endTime && todo.started && !todo.completed) {
+      // Task should be completed now
+      setTimeStatus('ready-to-end')
+      setTimeRemaining('Time up!')
+      setCanStart(false)
+      setCanEnd(true)
+    } else if (now >= scheduledTime && now < endTime && todo.started) {
+      // Task is in progress
+      setTimeStatus('in-progress')
+      const remainingMs = endTime - now
+      const remainingMinutes = Math.ceil(remainingMs / (1000 * 60))
+      setTimeRemaining(`${remainingMinutes}m left`)
+      setCanStart(false)
+      setCanEnd(true)
+    } else if (now >= scheduledTime && now < endTime && !todo.started) {
+      // Task is ready to start
+      setTimeStatus('ready-to-start')
+      const remainingMs = endTime - now
+      const remainingMinutes = Math.ceil(remainingMs / (1000 * 60))
+      setTimeRemaining(`${remainingMinutes}m to complete`)
+      setCanStart(true)
+      setCanEnd(false)
+    } else if (diffToStart > 0) {
+      // Task is waiting
+      setTimeStatus('waiting')
+      const waitingMinutes = Math.ceil(diffToStart / (1000 * 60))
+      const waitingHours = Math.floor(waitingMinutes / 60)
+      
+      if (waitingHours > 0) {
+        setTimeRemaining(`${waitingHours}h ${waitingMinutes % 60}m to start`)
+      } else {
+        setTimeRemaining(`${waitingMinutes}m to start`)
+      }
+      setCanStart(false)
+      setCanEnd(false)
     }
   }, [currentTime, todo, onUpdate])
 
   // Get motivational quote when task is ready to start (with rate limiting)
   useEffect(() => {
     if (timeStatus === 'ready-to-start' && !motivationalQuote && !quoteFetchedRef.current) {
-      quoteFetchedRef.current = true // Prevent multiple calls
+      quoteFetchedRef.current = true
       
-      const fetchQuote = async () => {
-        try {
-          // Add timeout to prevent hanging
-          const quote = await Promise.race([
-            getTaskMotivationalQuote(todo.title),
-            new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('Quote fetch timeout')), 2000)
-            )
-          ])
-          
-          if (quote) {
-            setMotivationalQuote(quote)
-          } else {
-            // Fallback quotes
-            const fallbacks = [
-              "You've got this! 💪",
-              "Time to shine! ✨", 
-              "Make it happen! 🚀",
-              "Focus and conquer! 🎯"
-            ]
-            setMotivationalQuote(fallbacks[Math.floor(Math.random() * fallbacks.length)])
-          }
-        } catch (error) {
-          console.log('Failed to get motivational quote:', error)
-          // Set fallback quote
-          setMotivationalQuote("Let's do this! 🚀")
-        }
-      }
+      const quotes = [
+        "You've got this! 💪",
+        "Every expert was once a beginner! 🌟",
+        "Progress, not perfection! 🚀",
+        "Your future self will thank you! ✨",
+        "Small steps lead to big changes! 👣",
+        "Believe in yourself! 🌈",
+        "You're stronger than you think! 💝",
+        "Make it happen! ⚡",
+        "You're on fire today! 🔥",
+        "Success starts with a single step! 🎯"
+      ]
       
-      fetchQuote()
-    }
-    
-    // Reset quote fetch flag when leaving ready-to-start status
-    if (timeStatus !== 'ready-to-start') {
-      quoteFetchedRef.current = false
+      const randomQuote = quotes[Math.floor(Math.random() * quotes.length)]
+      setMotivationalQuote(randomQuote)
     }
   }, [timeStatus, todo.title, motivationalQuote])
 
@@ -210,25 +192,17 @@ const TodoItem = ({ todo, currentTime, onUpdate, onDelete }) => {
 
   const handleStart = async () => {
     try {
-      await onUpdate(todo.id, { 
-        started: true,
-        notifiedStart: true,
-        startedAt: new Date().toISOString()
-      })
+      await onUpdate(todo.id, { started: true })
     } catch (error) {
-      console.error('Failed to start task:', error)
+      console.error('Error starting task:', error)
     }
   }
 
   const handleComplete = async () => {
     try {
-      await onUpdate(todo.id, { 
-        completed: true,
-        notifiedEnd: true,
-        completedAt: new Date().toISOString()
-      })
+      await onUpdate(todo.id, { completed: true })
     } catch (error) {
-      console.error('Failed to complete task:', error)
+      console.error('Error completing task:', error)
     }
   }
 
@@ -237,244 +211,210 @@ const TodoItem = ({ todo, currentTime, onUpdate, onDelete }) => {
       await onDelete(todo.id)
       setShowDeleteConfirm(false)
     } catch (error) {
-      console.error('Failed to delete task:', error)
+      console.error('Error deleting task:', error)
+    }
+  }
+
+  const handleEdit = async (todoId, updates) => {
+    try {
+      await onUpdate(todoId, updates)
+      setShowEditModal(false)
+    } catch (error) {
+      console.error('Error editing task:', error)
     }
   }
 
   const formatTime = (timeString) => {
     const [hours, minutes] = timeString.split(':')
-    const date = new Date()
-    date.setHours(parseInt(hours), parseInt(minutes))
-    return date.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true
-    })
+    const hour = parseInt(hours)
+    const period = hour >= 12 ? 'PM' : 'AM'
+    const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour
+    return `${displayHour}:${minutes} ${period}`
+  }
+
+  // Check if end time is next day
+  const isEndTimeNextDay = () => {
+    const [startHours] = todo.scheduledTime.split(':').map(Number)
+    const [endHours] = todo.endTime.split(':').map(Number)
+    return endHours < startHours || (endHours === startHours && todo.endTime <= todo.scheduledTime)
   }
 
   return (
     <>
       <motion.div
-        className="relative rounded-3xl p-6 shadow-xl overflow-hidden"
+        className="rounded-2xl p-6 shadow-lg transition-all duration-300 border-2"
         style={{
-          background: 'linear-gradient(135deg, var(--color-dark-200), var(--color-dark-300))',
-          border: `2px solid ${currentStatus.borderColor}`
-        }}
-        whileHover={{ 
-          scale: 1.02,
-          boxShadow: `0 25px 50px ${currentStatus.bgColor}`
+          backgroundColor: currentStatus.bgColor,
+          borderColor: currentStatus.borderColor
         }}
         layout
-        transition={{ type: "spring", stiffness: 300 }}
+        whileHover={{ scale: 1.02 }}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -20 }}
       >
-        {/* Background Pattern */}
-        <div 
-          className="absolute inset-0 opacity-50"
-          style={{ backgroundColor: currentStatus.bgColor }}
-        />
+        {/* Header */}
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex-1">
+            <div className="flex items-center gap-3 mb-2">
+              <motion.div
+                className="p-2 rounded-xl"
+                style={{ color: currentStatus.textColor }}
+                animate={{ rotate: timeStatus === 'in-progress' ? 360 : 0 }}
+                transition={{ duration: 2, repeat: timeStatus === 'in-progress' ? Infinity : 0 }}
+              >
+                <StatusIcon className="text-lg" />
+              </motion.div>
 
-        {/* Content */}
-        <div className="relative z-10">
-          {/* Header */}
-          <div className="flex items-start justify-between mb-4">
-            <div className="flex-1">
-              <div className="flex items-center gap-3 mb-2">
-                <motion.div
-                  className="p-2 rounded-xl"
-                  style={{ backgroundColor: currentStatus.bgColor }}
-                  animate={{ scale: [1, 1.1, 1] }}
-                  transition={{ duration: 2, repeat: Infinity }}
-                >
-                  <StatusIcon 
-                    className="text-lg"
-                    style={{ color: currentStatus.textColor }}
-                  />
-                </motion.div>
-                
-                <h3 className="text-xl font-bold text-white font-exo">
+              <div className="flex-1">
+                <h3 className="text-lg font-bold text-white font-exo line-clamp-2">
                   {todo.title}
                 </h3>
                 
-                <span 
-                  className="text-2xl"
-                  title={todo.category}
-                >
-                  {categoryConfig[todo.category]?.icon || '📋'}
-                </span>
-              </div>
-
-              {todo.description && (
-                <p className="text-gray-300 text-sm mb-3 font-exo">
-                  {todo.description}
-                </p>
-              )}
-
-              <div className="flex items-center gap-4 text-sm">
-                <div className="flex items-center gap-2">
-                  <FaClock className="text-gray-400" />
-                  <span className="text-gray-300 font-exo">
-                    {formatTime(todo.scheduledTime)} - {formatTime(todo.endTime)}
-                  </span>
-                </div>
-
-                <div 
-                  className="px-2 py-1 rounded-lg text-xs font-bold"
-                  style={{
-                    backgroundColor: priorityConfig[todo.priority].bg,
-                    color: priorityConfig[todo.priority].color
-                  }}
-                >
-                  <FaFlag className="inline mr-1" />
-                  {priorityConfig[todo.priority].label}
-                </div>
-
-                <div className="flex items-center gap-1">
-                  <FaTag className="text-gray-400" />
-                  <span 
-                    className="text-xs font-medium capitalize"
-                    style={{ color: categoryConfig[todo.category]?.color || '#9ca3af' }}
+                <div className="flex items-center gap-3 mt-1">
+                  <span
+                    className="text-xs px-2 py-1 rounded-full font-medium"
+                    style={{
+                      backgroundColor: priorityConfig[todo.priority].bg,
+                      color: priorityConfig[todo.priority].color
+                    }}
                   >
+                    {priorityConfig[todo.priority].label}
+                  </span>
+                  
+                  <span className="text-xs text-gray-400 flex items-center gap-1">
+                    <span style={{ color: categoryConfig[todo.category]?.color }}>
+                      {categoryConfig[todo.category]?.icon}
+                    </span>
                     {todo.category}
                   </span>
                 </div>
               </div>
             </div>
 
+            {/* Time Display */}
+            <div className="flex items-center gap-4 text-sm text-gray-300 mb-3">
+              <div className="flex items-center gap-1">
+                <FaClock className="text-xs" />
+                <span>{formatTime(todo.scheduledTime)}</span>
+              </div>
+              
+              <span>→</span>
+              
+              <div className="flex items-center gap-1">
+                <span>{formatTime(todo.endTime)}</span>
+                {isEndTimeNextDay() && (
+                  <span className="text-xs text-blue-400">(next day)</span>
+                )}
+              </div>
+            </div>
+
+            {/* Time Status */}
+            {timeRemaining && (
+              <motion.div
+                className="text-sm font-medium mb-3"
+                style={{ color: currentStatus.textColor }}
+                animate={{ opacity: [1, 0.7, 1] }}
+                transition={{ duration: 2, repeat: Infinity }}
+              >
+                {timeRemaining}
+              </motion.div>
+            )}
+
+            {/* Motivational Quote */}
+            {motivationalQuote && timeStatus === 'ready-to-start' && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="text-sm text-green-400 mb-3 font-medium"
+              >
+                {motivationalQuote}
+              </motion.div>
+            )}
+
+            {/* Description */}
+            {todo.description && (
+              <p className="text-sm text-gray-400 mb-4 line-clamp-2">
+                {todo.description}
+              </p>
+            )}
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex flex-col gap-2 ml-4">
+            {/* Edit Button - Only show when waiting */}
+            {timeStatus === 'waiting' && (
+              <motion.button
+                onClick={() => setShowEditModal(true)}
+                className="p-2 rounded-xl transition-all duration-300 text-blue-400 hover:text-white"
+                style={{ backgroundColor: 'rgba(59, 130, 246, 0.2)' }}
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.95 }}
+                title="Edit task"
+              >
+                <FaEdit className="text-sm" />
+              </motion.button>
+            )}
+
             {/* Delete Button */}
             <motion.button
               onClick={() => setShowDeleteConfirm(true)}
-              className="p-2 rounded-xl transition-all duration-300 text-gray-400 hover:text-red-400"
-              style={{ backgroundColor: 'rgba(15, 52, 96, 0.5)' }}
+              className="p-2 rounded-xl transition-all duration-300 text-red-400 hover:text-white"
+              style={{ backgroundColor: 'rgba(239, 68, 68, 0.2)' }}
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.95 }}
+              title="Delete task"
             >
               <FaTrash className="text-sm" />
             </motion.button>
           </div>
+        </div>
 
-          {/* Status and Time */}
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div 
-                className="px-3 py-1 rounded-full text-sm font-semibold font-exo"
-                style={{ 
-                  backgroundColor: currentStatus.bgColor,
-                  color: currentStatus.textColor 
-                }}
-              >
-                {timeStatus.replace('-', ' ').toUpperCase()}
-              </div>
-              
-              <span className="text-gray-300 font-exo">
-                {timeRemaining}
-              </span>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex gap-2">
-              {canStart && (
-                <motion.button
-                  onClick={handleStart}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all duration-300 text-white font-exo"
-                  style={{ backgroundColor: '#22c55e' }}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  <FaPlay className="text-sm" />
-                  Start
-                </motion.button>
-              )}
-
-              {canEnd && (
-                <motion.button
-                  onClick={handleComplete}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all duration-300 text-white font-exo"
-                  style={{ backgroundColor: '#f59e0b' }}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  <FaCheck className="text-sm" />
-                  Complete
-                </motion.button>
-              )}
-            </div>
-          </div>
-
-          {/* Motivational Quote */}
-          {motivationalQuote && timeStatus === 'ready-to-start' && (
-            <motion.div
-              className="mt-4 p-3 rounded-xl"
-              style={{ backgroundColor: 'rgba(34, 197, 94, 0.1)' }}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
+        {/* Action Buttons Row */}
+        <div className="flex gap-3">
+          {canStart && (
+            <motion.button
+              onClick={handleStart}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-medium transition-all duration-300 text-white"
+              style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
             >
-              <p className="text-green-400 text-sm italic font-exo">
-                "{motivationalQuote}"
-              </p>
-            </motion.div>
+              <FaPlay className="text-sm" />
+              Start Task
+            </motion.button>
+          )}
+
+          {canEnd && (
+            <motion.button
+              onClick={handleComplete}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-medium transition-all duration-300 text-white"
+              style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              <FaCheck className="text-sm" />
+              Complete
+            </motion.button>
           )}
         </div>
       </motion.div>
 
       {/* Delete Confirmation Modal */}
-      <AnimatePresence>
-        {showDeleteConfirm && (
-          <motion.div
-            className="fixed inset-0 z-50 flex items-center justify-center"
-            style={{ backgroundColor: 'rgba(0, 0, 0, 0.8)' }}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
-            <motion.div
-              className="bg-dark-200 rounded-2xl p-6 max-w-md mx-4"
-              style={{
-                background: 'linear-gradient(135deg, var(--color-dark-200), var(--color-dark-300))',
-                border: '1px solid rgba(239, 68, 68, 0.3)'
-              }}
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-            >
-              <div className="text-center">
-                <div className="w-16 h-16 bg-red-500 bg-opacity-20 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <FaTrash className="text-2xl text-red-400" />
-                </div>
-                
-                <h3 className="text-xl font-bold text-white mb-2 font-exo">
-                  Delete Task?
-                </h3>
-                
-                <p className="text-gray-300 mb-6 font-exo">
-                  Are you sure you want to delete "{todo.title}"? This action cannot be undone.
-                </p>
-                
-                <div className="flex gap-3">
-                  <motion.button
-                    onClick={() => setShowDeleteConfirm(false)}
-                    className="flex-1 px-4 py-2 rounded-xl font-medium transition-all duration-300 text-gray-300 font-exo"
-                    style={{ backgroundColor: 'rgba(75, 85, 99, 0.5)' }}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                  >
-                    Cancel
-                  </motion.button>
-                  
-                  <motion.button
-                    onClick={handleDelete}
-                    className="flex-1 px-4 py-2 rounded-xl font-medium transition-all duration-300 text-white font-exo"
-                    style={{ backgroundColor: '#ef4444' }}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                  >
-                    Delete
-                  </motion.button>
-                </div>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <DeleteConfirmModal
+        isOpen={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        onConfirm={handleDelete}
+        taskTitle={todo.title}
+      />
+
+      {/* Edit Task Modal */}
+      <EditTaskModal
+        isOpen={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        onSave={handleEdit}
+        todo={todo}
+      />
     </>
   )
 }

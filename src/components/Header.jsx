@@ -1,9 +1,12 @@
-import React from 'react'
-import { motion } from 'framer-motion'
-import { FaClock, FaCalendarAlt, FaBell, FaStar, FaPlus, FaChartBar } from 'react-icons/fa'
+import React, { useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { FaClock, FaCalendarAlt, FaBell, FaStar, FaPlus, FaChartBar, FaCopy } from 'react-icons/fa'
 import { MdDashboard } from 'react-icons/md'
+import CopyTimetableModal from './CopyTimetableModal'
 
-const Header = ({ currentTime, onAddTask, onShowAnalytics, hasNotificationPermission }) => {
+const Header = ({ currentTime, onAddTask, onShowAnalytics, onCopyTimetable, hasNotificationPermission }) => {
+  const [showCopyModal, setShowCopyModal] = useState(false)
+
   const formatDate = (date) => {
     return date.toLocaleDateString('en-US', {
       weekday: 'long',
@@ -31,6 +34,11 @@ const Header = ({ currentTime, onAddTask, onShowAnalytics, hasNotificationPermis
   }
 
   const greeting = getTimeBasedGreeting()
+
+  const handleCopyTimetable = (sourceDate, targetDate) => {
+    onCopyTimetable(sourceDate, targetDate)
+    setShowCopyModal(false)
+  }
 
   return (
     <motion.header
@@ -149,7 +157,25 @@ const Header = ({ currentTime, onAddTask, onShowAnalytics, hasNotificationPermis
             </motion.div>
 
             {/* Action Buttons */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Copy Timetable Button */}
+              <motion.button
+                onClick={() => setShowCopyModal(true)}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all duration-300 text-white font-exo"
+                style={{
+                  background: 'linear-gradient(135deg, #10b981, #059669)'
+                }}
+                whileHover={{ 
+                  scale: 1.05,
+                  boxShadow: "0 0 20px rgba(16, 185, 129, 0.4)"
+                }}
+                whileTap={{ scale: 0.95 }}
+                title="Copy previous day's timetable"
+              >
+                <FaCopy className="text-sm" />
+                <span className="hidden sm:inline">Copy</span>
+              </motion.button>
+
               {/* Analytics Button */}
               <motion.button
                 onClick={onShowAnalytics}
@@ -219,6 +245,13 @@ const Header = ({ currentTime, onAddTask, onShowAnalytics, hasNotificationPermis
           </motion.div>
         </div>
       </div>
+
+      {/* Copy Timetable Modal */}
+      <CopyTimetableModal
+        isOpen={showCopyModal}
+        onClose={() => setShowCopyModal(false)}
+        onCopy={handleCopyTimetable}
+      />
     </motion.header>
   )
 }

@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Header from './components/Header'
-import MotivationalQuote from './components/MotivationalQuote'
 import TodoItem from './components/TodoItem'
 import AddTaskForm from './components/AddTaskForm'
 import EmptyState from './components/EmptyState'
+import MotivationalQuote from './components/MotivationalQuote'
 import Analytics from './components/Analytics'
 import { useTimer } from './hooks/useTimer'
 import { useFirestore } from './hooks/useFirestore'
@@ -23,6 +23,7 @@ function App() {
     addTodo, 
     updateTodo, 
     deleteTodo,
+    copyPreviousDayTimetable,
     loading, 
     error 
   } = useFirestore()
@@ -36,83 +37,134 @@ function App() {
     hasPermission
   } = useNotifications()
 
-  // Helper function to check if a date is today
-  const isToday = (date) => {
-    const today = new Date()
-    const checkDate = new Date(date)
-    
-    return checkDate.getFullYear() === today.getFullYear() &&
-           checkDate.getMonth() === today.getMonth() &&
-           checkDate.getDate() === today.getDate()
-  }
-
-  // Helper function to get today's date string
+  // Helper function to get today's date string in local timezone
   const getTodayDateString = () => {
     const today = new Date()
-    return today.toISOString().split('T')[0] // YYYY-MM-DD format
+    const year = today.getFullYear()
+    const month = (today.getMonth() + 1).toString().padStart(2, '0')
+    const day = today.getDate().toString().padStart(2, '0')
+    return `${year}-${month}-${day}` // YYYY-MM-DD format in local timezone
   }
 
-  // Filter todos to show only today's tasks
+  // ENHANCED: Better task filtering logic for cross-day tasks
   const getTodaysTodos = (allTodos) => {
     const today = getTodayDateString()
+    const yesterday = new Date()
+    yesterday.setDate(yesterday.getDate() - 1)
+    const yesterdayString = yesterday.toISOString().split('T')[0]
     
-    return allTodos.filter(todo => {
-      // If todo has a createdAt date, check if it's today
-      if (todo.createdAt) {
-        const todoDate = new Date(todo.createdAt).toISOString().split('T')[0]
-        return todoDate === today
+    console.log(`Filtering todos for today: ${today}`)
+    
+    const todaysTodos = allTodos.filter(todo => {
+      // Include tasks scheduled for today
+      if (todo.scheduledDate === today) {
+        return true
       }
       
-      // If todo has a scheduledDate field, use that
-      if (todo.scheduledDate) {
-        return todo.scheduledDate === today
+      // Include tasks from yesterday that might extend to today (cross-day tasks)
+      if (todo.scheduledDate === yesterdayString) {
+        const [startHours] = todo.scheduledTime.split(':').map(Number)
+        const [endHours] = todo.endTime.split(':').map(Number)
+        
+        // Check if it's a cross-day task (end time is earlier than start time)
+        if (endHours < startHours || (endHours === startHours && todo.endTime <= todo.scheduledTime)) {
+          // This task extends to today
+          return true
+        }
       }
       
-      // If no date fields, assume it's an old todo and filter it out
       return false
     })
+    
+    console.log(`Filtered ${todaysTodos.length} todos for today out of ${allTodos.length} total`)
+    return todaysTodos
   }
 
-  // Define handler functions first (before useEffect that references them)
-  
   // Handle adding new todo with today's date
   const handleAddTodo = async (todoData) => {
     try {
-      // Add today's date to the todo
       const todoWithDate = {
         ...todoData,
-        scheduledDate: getTodayDateString(), // Add scheduled date
-        createdAt: new Date().toISOString() // Ensure createdAt is set
+        scheduledDate: getTodayDateString()
       }
       
       const newTodo = await addTodo(todoWithDate)
-      setTodos(prev => [...prev, newTodo])
+      console.log('Added new todo:', newTodo)
+      
+      // Refresh todos to get updated list
+      const allTodos = await getTodos()
+      const todaysTodos = getTodaysTodos(allTodos)
+      setTodos(todaysTodos)
+      
+      setShowAddForm(false)
     } catch (error) {
-      console.error('Failed to add todo:', error)
+      console.error('Error adding todo:', error)
     }
   }
 
   // Handle updating todo
   const handleUpdateTodo = async (todoId, updates) => {
     try {
+      console.log('Updating todo:', todoId, updates)
       const updatedTodo = await updateTodo(todoId, updates)
-      setTodos(prev =>
-        prev.map(todo =>
-          todo.id === todoId ? { ...todo, ...updatedTodo } : todo
+      
+      // Update local state immediately for better UX
+      setTodos(prevTodos =>
+        prevTodos.map(todo =>
+          todo.id === todoId ? { ...todo, ...updates } : todo
         )
       )
+      
+      console.log('Updated todo:', updatedTodo)
     } catch (error) {
-      console.error('Failed to update todo:', error)
+      console.error('Error updating todo:', error)
+      
+      // Refresh todos on error to ensure consistency
+      const allTodos = await getTodos()
+      const todaysTodos = getTodaysTodos(allTodos)
+      setTodos(todaysTodos)
     }
   }
 
   // Handle deleting todo
   const handleDeleteTodo = async (todoId) => {
     try {
+      console.log('Deleting todo:', todoId)
       await deleteTodo(todoId)
-      setTodos(prev => prev.filter(todo => todo.id !== todoId))
+      
+      // Remove from local state immediately
+      setTodos(prevTodos => prevTodos.filter(todo => todo.id !== todoId))
+      
+      console.log('Deleted todo successfully')
     } catch (error) {
-      console.error('Failed to delete todo:', error)
+      console.error('Error deleting todo:', error)
+    }
+  }
+
+  // Handle copying timetable
+  const handleCopyTimetable = async (sourceDate, targetDate) => {
+    try {
+      console.log(`Copying timetable from ${sourceDate} to ${targetDate}`)
+      const result = await copyPreviousDayTimetable(sourceDate, targetDate)
+      
+      if (result.success) {
+        // If target date is today, refresh the todos list
+        if (targetDate === getTodayDateString()) {
+          const allTodos = await getTodos()
+          const todaysTodos = getTodaysTodos(allTodos)
+          setTodos(todaysTodos)
+        }
+        
+        // Show success message (you can implement a toast notification here)
+        console.log('Timetable copied successfully:', result.message)
+        alert(result.message) // Replace with a proper toast notification
+      } else {
+        console.log('Copy failed:', result.message)
+        alert(result.message) // Replace with a proper toast notification
+      }
+    } catch (error) {
+      console.error('Error copying timetable:', error)
+      alert('Failed to copy timetable. Please try again.') // Replace with proper error handling
     }
   }
 
@@ -120,14 +172,18 @@ function App() {
   useEffect(() => {
     const loadTodos = async () => {
       try {
-        const todosData = await getTodos()
-        // Filter to show only today's todos
-        const todaysTodos = getTodaysTodos(todosData)
+        setIsInitialLoading(true)
+        console.log('Loading initial todos...')
+        
+        const allTodos = await getTodos()
+        console.log('Loaded todos:', allTodos)
+        
+        const todaysTodos = getTodaysTodos(allTodos)
         setTodos(todaysTodos)
         
-        console.log(`Loaded ${todosData.length} total todos, showing ${todaysTodos.length} for today`)
+        console.log('Set today\'s todos:', todaysTodos)
       } catch (error) {
-        console.error('Failed to load todos:', error)
+        console.error('Error loading todos:', error)
       } finally {
         setIsInitialLoading(false)
       }
@@ -136,38 +192,32 @@ function App() {
     loadTodos()
   }, [getTodos])
 
-  // Check for date change and refresh todos if needed
+  // ENHANCED: Better date change detection with cross-day task handling
   useEffect(() => {
     const checkDateChange = () => {
-      const now = new Date()
-      const lastCheck = localStorage.getItem('lastDateCheck')
-      const currentDateString = getTodayDateString()
+      const storedDate = localStorage.getItem('current-date')
+      const currentDate = getTodayDateString()
       
-      if (lastCheck !== currentDateString) {
-        console.log('Date changed, refreshing todos for new day')
-        localStorage.setItem('lastDateCheck', currentDateString)
+      if (storedDate && storedDate !== currentDate) {
+        console.log(`Date changed from ${storedDate} to ${currentDate}, refreshing todos...`)
         
-        // Reload todos for the new day
-        const loadTodosForNewDay = async () => {
-          try {
-            const todosData = await getTodos()
-            const todaysTodos = getTodaysTodos(todosData)
-            setTodos(todaysTodos)
-            console.log(`New day started! Showing ${todaysTodos.length} todos for today`)
-          } catch (error) {
-            console.error('Failed to refresh todos for new day:', error)
-          }
-        }
-        
-        loadTodosForNewDay()
+        // Refresh todos when date changes
+        getTodos().then(allTodos => {
+          const todaysTodos = getTodaysTodos(allTodos)
+          setTodos(todaysTodos)
+        }).catch(error => {
+          console.error('Error refreshing todos on date change:', error)
+        })
       }
+      
+      localStorage.setItem('current-date', currentDate)
     }
 
     // Check immediately
     checkDateChange()
     
-    // Check every minute for date changes (at midnight)
-    const interval = setInterval(checkDateChange, 60 * 1000)
+    // Check every 30 seconds for date changes (more frequent check)
+    const interval = setInterval(checkDateChange, 30 * 1000)
     
     return () => clearInterval(interval)
   }, [getTodos])
@@ -175,9 +225,10 @@ function App() {
   // Request notification permission on mount
   useEffect(() => {
     const initNotifications = async () => {
-      const granted = await requestPermission()
-      if (granted) {
-        console.log('Notification permission granted')
+      try {
+        await requestPermission()
+      } catch (error) {
+        console.error('Error requesting notification permission:', error)
       }
     }
 
@@ -187,7 +238,11 @@ function App() {
   // Enhanced notification management - only for today's todos
   useEffect(() => {
     if (hasPermission && todos.length > 0) {
-      startPeriodicNotifications(todos, currentTime)
+      console.log('Starting periodic notifications for', todos.length, 'todos')
+      startPeriodicNotifications(todos)
+    } else {
+      console.log('Stopping periodic notifications')
+      stopPeriodicNotifications()
     }
 
     return () => {
@@ -200,37 +255,66 @@ function App() {
     if (!hasPermission || todos.length === 0) return
 
     todos.forEach(todo => {
-      const now = currentTime
-      const [startHours, startMinutes] = todo.scheduledTime.split(':')
-      const [endHours, endMinutes] = todo.endTime.split(':')
-      
-      const startTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 
-                                 parseInt(startHours), parseInt(startMinutes))
-      const endTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 
-                               parseInt(endHours), parseInt(endMinutes))
-      
-      const minutesToStart = Math.floor((startTime - now) / (1000 * 60))
-      const minutesToEnd = Math.floor((endTime - now) / (1000 * 60))
+      if (todo.completed || todo.failed) return
 
-      // Send start reminder when exactly at start time
-      if (minutesToStart === 0 && !todo.started && !todo.notifiedStart) {
+      // Helper to get datetime for today
+      const getDateTimeForToday = (timeString) => {
+        const today = new Date()
+        const [hours, minutes] = timeString.split(':')
+        return new Date(today.getFullYear(), today.getMonth(), today.getDate(), parseInt(hours), parseInt(minutes))
+      }
+
+      // Helper to get datetime for cross-day tasks
+      const getEndDateTimeForCrossDay = (startTime, endTime) => {
+        const today = new Date()
+        const [startHours] = startTime.split(':').map(Number)
+        const [endHours] = endTime.split(':').map(Number)
+        const [hours, minutes] = endTime.split(':')
+        
+        let endDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), parseInt(hours), parseInt(minutes))
+        
+        // If end time is earlier than start time, it's next day
+        if (endHours < startHours || (endHours === startHours && endTime <= startTime)) {
+          endDate.setDate(endDate.getDate() + 1)
+        }
+        
+        return endDate
+      }
+
+      const scheduledTime = getDateTimeForToday(todo.scheduledTime)
+      const endTime = getEndDateTimeForCrossDay(todo.scheduledTime, todo.endTime)
+      const now = currentTime
+
+      // Check for start reminders (5 minutes before)
+      const startReminderTime = new Date(scheduledTime.getTime() - 5 * 60 * 1000)
+      if (now >= startReminderTime && now < scheduledTime && !todo.notifiedStart && !todo.started) {
         sendTaskStartReminder(todo)
         handleUpdateTodo(todo.id, { notifiedStart: true })
       }
 
-      // Send end reminder when exactly at end time
-      if (minutesToEnd === 0 && todo.started && !todo.completed && !todo.notifiedEnd) {
+      // Check for end reminders (at end time)
+      if (now >= endTime && !todo.notifiedEnd && todo.started && !todo.completed) {
         sendTaskEndReminder(todo)
         handleUpdateTodo(todo.id, { notifiedEnd: true })
       }
     })
   }, [currentTime, todos, hasPermission, sendTaskStartReminder, sendTaskEndReminder, handleUpdateTodo])
 
-  // Sort todos by scheduled time
+  // Sort todos by scheduled time (accounting for cross-day tasks)
   const sortedTodos = todos.sort((a, b) => {
-    const timeA = new Date(`2000-01-01T${a.scheduledTime}`)
-    const timeB = new Date(`2000-01-01T${b.scheduledTime}`)
-    return timeA - timeB
+    // If both are same date, sort by time
+    if (a.scheduledDate === b.scheduledDate) {
+      const timeA = new Date(`2000-01-01T${a.scheduledTime}`)
+      const timeB = new Date(`2000-01-01T${b.scheduledTime}`)
+      return timeA - timeB
+    }
+    
+    // If different dates, yesterday's cross-day tasks come first
+    const today = getTodayDateString()
+    if (a.scheduledDate !== today && b.scheduledDate === today) return -1
+    if (a.scheduledDate === today && b.scheduledDate !== today) return 1
+    
+    return 0
   })
 
   if (isInitialLoading) {
@@ -238,16 +322,17 @@ function App() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="animated-bg"></div>
         <motion.div
-          className="text-center"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
+          className="relative z-10 text-center"
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.5 }}
         >
           <motion.div
             className="w-16 h-16 border-4 border-accent-100 border-t-transparent rounded-full mx-auto mb-4"
             animate={{ rotate: 360 }}
             transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
           />
-          <p className="text-xl text-white font-exo">Loading your schedule...</p>
+          <h2 className="text-xl text-white font-exo">Loading your timetable...</h2>
         </motion.div>
       </div>
     )
@@ -265,17 +350,18 @@ function App() {
           currentTime={currentTime}
           onAddTask={() => setShowAddForm(true)}
           onShowAnalytics={() => setShowAnalytics(true)}
+          onCopyTimetable={handleCopyTimetable}
           hasNotificationPermission={hasPermission}
         />
 
-        {/* Main Content Container */}
+        {/* Main Content */}
         <main className="container mx-auto px-4 py-8">
-          {/* Centered Motivational Quote */}
+          {/* Motivational Quote Section */}
           <div className="flex justify-center mb-12">
             <MotivationalQuote />
           </div>
 
-          {/* Schedule Section */}
+          {/* Today's Schedule Section */}
           <motion.section
             initial={{ opacity: 0, y: 50 }}
             animate={{ opacity: 1, y: 0 }}
@@ -300,7 +386,7 @@ function App() {
                     year: 'numeric', 
                     month: 'long', 
                     day: 'numeric' 
-                  })}
+                  })} - {getTodayDateString()}
                 </p>
               </div>
               
@@ -322,7 +408,7 @@ function App() {
               )}
             </motion.div>
 
-            {/* Error Message */}
+            {/* Error Display */}
             {error && (
               <motion.div
                 className="mb-6 p-4 rounded-xl text-red-400 font-exo"
@@ -334,7 +420,7 @@ function App() {
               </motion.div>
             )}
 
-            {/* Fresh Start Message for New Day */}
+            {/* Empty State or Fresh Start Message */}
             {todos.length === 0 && !isInitialLoading && (
               <motion.div
                 className="mb-6 p-4 rounded-xl text-green-400 font-exo text-center"
@@ -346,12 +432,12 @@ function App() {
                 <div className="text-2xl mb-2">🌅</div>
                 <div className="text-lg font-semibold mb-1">Fresh Start!</div>
                 <div className="text-sm">
-                  Ready to make today productive? Add your first task to get started.
+                  Ready to make today productive? Add your first task for {getTodayDateString()}.
                 </div>
               </motion.div>
             )}
 
-            {/* Todo List or Empty State */}
+            {/* Tasks List */}
             <AnimatePresence mode="wait">
               {todos.length === 0 ? (
                 <EmptyState 

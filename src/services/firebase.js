@@ -47,7 +47,7 @@ class FirestoreService {
   }
 
   // Get all todos
-  async getTodos(userId = 'default') {
+  async getTodosByDateRange(startDate, endDate, userId = 'default') {
     if (!this.isConfigured || !this.db) {
       throw new Error('Firestore not configured')
     }
@@ -56,9 +56,9 @@ class FirestoreService {
       const todosRef = collection(this.db, COLLECTIONS.TODOS)
       const q = query(
         todosRef,
-        where('userId', '==', userId)
-        // Remove orderBy temporarily to avoid index requirement
-        // orderBy('scheduledTime', 'asc')
+        where('userId', '==', userId),
+        where('scheduledDate', '>=', startDate),
+        where('scheduledDate', '<=', endDate)
       )
       
       const querySnapshot = await getDocs(q)
@@ -71,8 +71,75 @@ class FirestoreService {
         })
       })
       
-      // Sort in JavaScript instead
+      return todos
+    } catch (error) {
+      console.error('Error fetching todos by date range:', error)
+      throw error
+    }
+  }
+  async getTodosByDate(date, userId = 'default') {
+    if (!this.isConfigured || !this.db) {
+      throw new Error('Firestore not configured')
+    }
+
+    try {
+      const todosRef = collection(this.db, COLLECTIONS.TODOS)
+      const q = query(
+        todosRef,
+        where('userId', '==', userId),
+        where('scheduledDate', '==', date)
+      )
+      
+      const querySnapshot = await getDocs(q)
+      const todos = []
+      
+      querySnapshot.forEach((doc) => {
+        todos.push({
+          id: doc.id,
+          ...doc.data()
+        })
+      })
+      
+      // Sort by scheduled time
       todos.sort((a, b) => {
+        const timeA = new Date(`2000-01-01T${a.scheduledTime}`)
+        const timeB = new Date(`2000-01-01T${b.scheduledTime}`)
+        return timeA - timeB
+      })
+      
+      return todos
+    } catch (error) {
+      console.error('Error fetching todos by date:', error)
+      throw error
+    }
+  }
+  async getTodos(userId = 'default') {
+    if (!this.isConfigured || !this.db) {
+      throw new Error('Firestore not configured')
+    }
+
+    try {
+      const todosRef = collection(this.db, COLLECTIONS.TODOS)
+      const q = query(
+        todosRef,
+        where('userId', '==', userId)
+      )
+      
+      const querySnapshot = await getDocs(q)
+      const todos = []
+      
+      querySnapshot.forEach((doc) => {
+        todos.push({
+          id: doc.id,
+          ...doc.data()
+        })
+      })
+      
+      // Sort by scheduled date and time
+      todos.sort((a, b) => {
+        if (a.scheduledDate !== b.scheduledDate) {
+          return new Date(a.scheduledDate) - new Date(b.scheduledDate)
+        }
         const timeA = new Date(`2000-01-01T${a.scheduledTime}`)
         const timeB = new Date(`2000-01-01T${b.scheduledTime}`)
         return timeA - timeB
