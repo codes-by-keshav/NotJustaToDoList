@@ -1,5 +1,7 @@
 # 🚀 AI-Powered Todo & Timetable App
-![Screenshot 2025-07-05 011504](https://github.com/user-attachments/assets/b23ed607-0beb-441d-b5fa-0dd034762913)
+![Screenshot 2025-07-05 011653](https://github.com/user-attachments/assets/0e27f894-4dfb-4656-a74b-91b7e21fa289)
+![Screenshot 2025-07-05 011643](https://github.com/user-attachments/assets/d27d41e8-470a-435f-8b87-e136186c266c)
+![Screenshot 2025-07-05 011622](https://github.com/user-attachments/assets/8a42fd77-c50f-410a-b857-d7958b256766)
 
 A modern, feature-rich productivity application built with React and Vite, featuring AI-generated motivational quotes, comprehensive analytics, and intelligent task management.
 
